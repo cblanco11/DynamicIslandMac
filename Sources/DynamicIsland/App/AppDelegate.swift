@@ -18,6 +18,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if ClickSelfTest.requested {
+            ClickSelfTest.run()
+            return
+        }
+
         if MediaProbe.requested {
             MediaProbe.run()
             return

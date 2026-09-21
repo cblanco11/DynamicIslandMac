@@ -91,10 +91,16 @@ final class IslandController {
                height: notch.rect.height)
     }
 
+    var hoverSize: CGSize {
+        CGSize(width: notch.rect.width + 2 * IslandMetrics.hoverExtension,
+               height: IslandMetrics.hoverHeight)
+    }
+
     func size(for state: IslandState) -> CGSize {
         switch state {
         case .closed:   closedSize
         case .peek:     peekSize
+        case .hover:    hoverSize
         case .expanded: IslandMetrics.expandedSize
         }
     }
@@ -151,9 +157,16 @@ final class IslandController {
 
     func present(_ activity: Activity?) {
         restingActivity = activity
-        // Hovering wins; the new activity is picked up when the hover ends.
-        guard state != .expanded else { return }
-        transition(to: restingState)
+        // An open player or an active hover wins; the new activity is picked up
+        // when the user moves away.
+        switch state {
+        case .expanded:
+            return
+        case .hover:
+            if let activity { transition(to: .hover(activity)) } else { transition(to: .closed) }
+        case .closed, .peek:
+            transition(to: restingState)
+        }
     }
 
     /// The activity the island should draw, in any state.
@@ -169,13 +182,32 @@ final class IslandController {
     // MARK: - Hover
 
     func mouseEntered() {
-        // Reserve the expanded panel now, while nothing is animating.
-        reserve(IslandMetrics.expandedSize)
-        scheduleHover(after: IslandMetrics.hoverInDelay) { $0.transition(to: .expanded) }
+        // Nothing to show means nothing to hint at; the island stays inert.
+        guard let activity = restingActivity else { return }
+        // Reserve the hover panel now, while nothing is animating.
+        reserve(hoverSize)
+        scheduleHover(after: IslandMetrics.hoverInDelay) { $0.transition(to: .hover(activity)) }
     }
 
     func mouseExited() {
         scheduleHover(after: IslandMetrics.hoverOutDelay) { $0.transition(to: $0.restingState) }
+    }
+
+    /// A click on the island opens the full player, and closes it again.
+    ///
+    /// Deliberately separate from hover: hovering the top of the screen is
+    /// something people do by accident all day, so the full player is only ever
+    /// a decision.
+    func islandClicked() {
+        hoverTask?.cancel()
+        switch state {
+        case .expanded:
+            transition(to: restingActivity.map { IslandState.hover($0) } ?? .closed)
+        case .peek, .hover:
+            transition(to: .expanded)
+        case .closed:
+            break
+        }
     }
 
     private func scheduleHover(after delay: Duration,

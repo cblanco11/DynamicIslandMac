@@ -24,5 +24,18 @@ struct NowPlaying: Equatable, Sendable {
     var artwork: Data?
     var artworkMIMEType: String?
 
+    /// 1 = off, 2 = albums, 3 = tracks (adapter's kMRAShuffle* values).
+    var shuffleMode: Int?
+    /// 1 = off, 2 = track, 3 = playlist.
+    var repeatMode: Int?
+
+    var isShuffling: Bool { (shuffleMode ?? 1) > 1 }
+    var isRepeating: Bool { (repeatMode ?? 1) > 1 }
+
+    var remaining: TimeInterval? {
+        guard let duration, let elapsed else { return nil }
+        return max(0, duration - elapsed)
+    }
+
     var hasContent: Bool { title != nil || artist != nil }
 }

@@ -58,6 +58,7 @@ test: build stop
 	@echo "== debug overlay =="        && $(BIN) -DISelfTest YES -DIDebugOverlay YES
 	@echo "== lifecycle =="            && $(BIN) -DILifecycleTest YES
 	@echo "== morph top edge =="       && $(BIN) -DICaptureMorph "$(CURDIR)/$(DERIVED)/live" | tail -3
+	@echo "== click + transport =="    && $(BIN) -DIClickTest YES | tail -2
 
 # Renders the island to PNGs -- an LSUIElement app is invisible to screen capture.
 snapshots: build stop

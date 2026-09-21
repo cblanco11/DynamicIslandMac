@@ -58,6 +58,7 @@ enum SnapshotExporter {
         var states: [(String, IslandState)] = [("closed", .closed)]
         if let activity {
             states.append(("peek", .peek(activity)))
+            states.append(("hover", .hover(activity)))
             states.append(("expanded", .expanded))
         }
 
@@ -82,7 +83,7 @@ enum SnapshotExporter {
     private static func render(controller: IslandController, to url: URL) -> Bool {
         // Fixed canvas, larger than any island state, so the two snapshots
         // are directly comparable and the shoulders are never clipped.
-        let size = CGSize(width: 640, height: 220)
+        let size = CGSize(width: 640, height: 260)
 
         let content = ZStack(alignment: .top) {
             // Stand-in for the menu bar strip and the desktop below it, so the

@@ -26,6 +26,7 @@ struct DebugOverlay: View {
         switch controller.state {
         case .closed:            "closed"
         case .peek(let a):       "peek(\(a.id))"
+        case .hover(let a):      "hover(\(a.id))"
         case .expanded:          "expanded"
         }
     }

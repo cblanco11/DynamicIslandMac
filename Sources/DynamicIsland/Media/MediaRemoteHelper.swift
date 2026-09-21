@@ -229,6 +229,8 @@ final class MediaRemoteHelper {
         if let v = number("elapsedTime") { snapshot.elapsed = v }
         if let v = number("playbackRate") { snapshot.playbackRate = v }
         if let v = number("timestamp") { snapshot.timestamp = Date(timeIntervalSince1970: v / 1000) }
+        if let v = number("shuffleMode") { snapshot.shuffleMode = Int(v) }
+        if let v = number("repeatMode") { snapshot.repeatMode = Int(v) }
 
         let trackID = string("uniqueIdentifier")
             ?? string("contentItemIdentifier")
@@ -258,6 +260,7 @@ final class MediaRemoteHelper {
     enum Command: Int {
         case play = 0, pause = 1, togglePlayPause = 2, stop = 3
         case nextTrack = 4, previousTrack = 5
+        case toggleShuffle = 6, toggleRepeat = 7
     }
 
     func send(_ command: Command) {

@@ -29,6 +29,7 @@ DynamicIsland -DIExportMorph /tmp/morph       # filmstrip comparing morph spring
 DynamicIsland -DICaptureMorph /tmp/live       # capture a REAL morph, frame by frame
 DynamicIsland -DIMediaTest YES                # can THIS bundle read MediaRemote directly?
 DynamicIsland -DIMediaStream YES              # live now-playing via the bundled helper
+DynamicIsland -DIClickTest YES                # clicks + transport in a non-key panel
 ```
 
 All three print a `RESULT: PASS` / `FAIL` line and exit, so they are usable as
@@ -62,6 +63,19 @@ Media/       MediaRemote helper process, NowPlaying model, artwork tint
 UI/          panel, container view, shape, SwiftUI views
 Vendor/      mediaremote-adapter submodule, pinned
 ```
+
+### Interaction model
+
+```
+closed  -- nothing playing; the island is exactly the notch, and inert
+peek    -- resting: artwork left, waveform (or a play glyph when paused) right
+hover   -- cursor over the island: a small growth that adds the title
+expanded-- opened by a CLICK, not by hovering
+```
+
+Hover deliberately does **not** open the player. Hovering the top of the screen
+is something people do by accident all day; the full player is only ever a
+decision. Clicking again, or moving away, closes it.
 
 ### Activities
 
@@ -293,6 +307,32 @@ scrubs, so it is carried forward while the track identity is unchanged.
 
 `--debounce=200` is not optional for the CPU budget: without it the app burned
 0.39s of CPU per 60s idle, with it 0.01s.
+
+### Clicks work in a non-key panel, but layering is easy to get wrong
+
+The panel is `.nonactivatingPanel` and returns false from `canBecomeKey`.
+Verified on macOS 26.7 that both `onTapGesture` **and** SwiftUI `Button`s still
+receive clicks there, so nothing special is needed for key-window state.
+
+What *did* break: a transparent tap layer placed above the content in the
+`ZStack` swallowed every click before the transport buttons saw one, leaving the
+controls silently dead. The click target is now the `IslandShape` itself,
+**below** the content; peek and hover pass clicks through with
+`allowsHitTesting(false)`, and the expanded player does its own hit testing with
+a body-level tap to dismiss (SwiftUI gives buttons priority over an ancestor's
+gesture).
+
+This cannot be tested from outside -- screen-capture tools will not drive clicks
+into an `LSUIElement` app -- so `-DIClickTest YES` synthesises events through
+`NSWindow.sendEvent` and asserts both the open/close toggle and that a transport
+command actually fires.
+
+### Watch for vacuous passes in the morph harness
+
+`mouseEntered()` returns early when there is no activity, so a capture run
+without one leaves the island in `.closed` and the top-edge assertion passes
+having tested nothing. The harness seeds a synthetic `NowPlaying` and drives
+closed -> peek -> hover -> expanded -> hover, covering every resize.
 
 ## Budget
 

@@ -53,6 +53,19 @@ final class LiveMorphCapture {
         print("screen \(screen.frame)")
         print("notch  \(notch.rect)   (closed island should match this exactly)")
 
+        // Seed an activity, or `mouseEntered` guards out and the whole capture
+        // passes vacuously with the island never leaving `.closed`.
+        var snapshot = NowPlaying()
+        snapshot.trackID = "selftest"
+        snapshot.title = "Self Test"
+        snapshot.artist = "DynamicIsland"
+        snapshot.duration = 180
+        snapshot.elapsed = 42
+        controller.restore(
+            activity: Activity(id: "media", priority: .ambient, kind: .nowPlaying(snapshot)),
+            tint: ArtworkColor.fallback
+        )
+
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(600))
             guard let view = panel.contentView else { return }
@@ -60,10 +73,17 @@ final class LiveMorphCapture {
             let link = view.displayLink(target: self, selector: #selector(tick(_:)))
             link.add(to: .main, forMode: .common)
             self.link = link
-            // Drive the real production path, not a shortcut.
-            controller.mouseEntered()
 
-            try? await Task.sleep(for: .milliseconds(1400))
+            // Drive the real production path, not a shortcut, through every
+            // resize the island can make: closed -> hover -> expanded -> back.
+            controller.present(controller.restingActivity)
+            try? await Task.sleep(for: .milliseconds(700))
+            controller.mouseEntered()
+            try? await Task.sleep(for: .milliseconds(900))
+            controller.islandClicked()
+            try? await Task.sleep(for: .milliseconds(1100))
+            controller.islandClicked()
+            try? await Task.sleep(for: .milliseconds(900))
             self.finish()
         }
     }
