@@ -81,6 +81,7 @@ final class IslandController {
 
     var closedSize: CGSize { notch.rect.size }
 
+    /// The island's own size in the current state.
     var currentSize: CGSize {
         switch state {
         case .closed:           closedSize
@@ -88,23 +89,46 @@ final class IslandController {
         }
     }
 
-    /// The island's frame inside the panel: horizontally centred, pinned to the
-    /// top edge. Top-left origin, matching the flipped container view.
-    func frame(for size: CGSize) -> CGRect {
-        CGRect(x: (IslandMetrics.panelSize.width - size.width) / 2,
-               y: 0,
-               width: size.width,
-               height: size.height)
+    /// The island size the panel must be able to contain right now. While a
+    /// morph is in flight this is the larger of source and target, so the panel
+    /// is already big enough before the shape grows into it, and only shrinks
+    /// once the shape has finished collapsing.
+    private var containedSize: CGSize {
+        guard isMorphing else { return currentSize }
+        return CGSize(width: max(currentSize.width, IslandMetrics.expandedSize.width),
+                      height: max(currentSize.height, IslandMetrics.expandedSize.height))
     }
 
-    /// What `hitTest` and the tracking area treat as solid. Deliberately the
-    /// union of source and target while a morph is in flight: if this shrank
-    /// instantly on collapse, a fast hover-out would fall through the gap and
-    /// strand the island open.
+    /// The panel's size. The panel frame *is* the interactive region: the window
+    /// server routes clicks by frame, so anything the panel covers is a click the
+    /// app underneath does not get. See CLAUDE.md, "hitTest does not produce
+    /// click pass-through".
+    var panelSize: CGSize {
+        let island = containedSize
+        return CGSize(
+            width: island.width + 2 * IslandMetrics.shoulderRadius,
+            height: island.height + (debugOverlayEnabled ? IslandMetrics.debugOverlayHeight : 0)
+        )
+    }
+
+    /// The island's frame inside the panel: horizontally centred, pinned to the
+    /// top edge. Top-left origin, matching the flipped container view.
+    var islandFrame: CGRect {
+        let size = currentSize
+        return CGRect(x: (panelSize.width - size.width) / 2, y: 0,
+                      width: size.width, height: size.height)
+    }
+
+    /// What the tracking area covers. The union of source and target while
+    /// morphing: if this shrank the moment a collapse began, a fast hover-out
+    /// would fall through the gap and strand the island open.
     var interactiveFrame: CGRect {
-        let resting = frame(for: currentSize)
+        let resting = islandFrame
         guard isMorphing else { return resting }
-        return resting.union(frame(for: IslandMetrics.expandedSize))
+        let expanded = CGRect(x: (panelSize.width - IslandMetrics.expandedSize.width) / 2, y: 0,
+                              width: IslandMetrics.expandedSize.width,
+                              height: IslandMetrics.expandedSize.height)
+        return resting.union(expanded)
     }
 
     // MARK: - Animation

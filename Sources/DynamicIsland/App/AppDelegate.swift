@@ -22,9 +22,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panels.rebuild()
 
+        if LifecycleSelfTest.requested {
+            LifecycleSelfTest.run(panels: panels)
+            return
+        }
+
         let observer = ScreenObserver(
             onScreenChange: { [weak self] in
-                self?.log.info("screen parameters changed; rebuilding")
+                self?.log.notice("screen parameters changed; rebuilding")
                 self?.panels.rebuild()
             },
             onWake: { [weak self] in
@@ -34,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         screens = observer
         statusItem = StatusItemController(panels: panels, screens: observer)
 
-        log.info("launched with \(self.panels.screenCount, privacy: .public) panel(s)")
+        log.notice("launched: \(self.panels.screenCount, privacy: .public) panel(s), status item ready")
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

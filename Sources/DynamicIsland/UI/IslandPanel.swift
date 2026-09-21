@@ -1,7 +1,17 @@
 import AppKit
 
-/// One borderless, non-activating panel per screen. Sized once to the maximum
-/// expanded bounds and never resized -- the island morphs *inside* it.
+/// One borderless, non-activating panel per screen.
+///
+/// The panel's frame **is** the interactive region. The window server routes
+/// clicks by window frame -- not by AppKit view hit testing, and not by alpha
+/// (see CLAUDE.md, "hitTest does not produce click pass-through") -- so the only
+/// way for clicks to reach the app underneath is for no window to be there.
+///
+/// It is therefore resized to track the island, but only at transition
+/// boundaries: it jumps to the target size before the shape starts growing and
+/// shrinks only once the shape has finished collapsing. Two resizes per hover
+/// cycle, never per frame, so the morph itself stays a single uninterrupted
+/// geometry animation inside a stationary window.
 @MainActor
 final class IslandPanel: NSPanel {
 
@@ -9,9 +19,15 @@ final class IslandPanel: NSPanel {
     static let islandCollectionBehavior: NSWindow.CollectionBehavior =
         [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
+    private let controller: IslandController
+    private var screenFrame: CGRect
+
     init(screen: NSScreen, controller: IslandController) {
+        self.controller = controller
+        self.screenFrame = screen.frame
+
         super.init(
-            contentRect: CGRect(origin: .zero, size: IslandMetrics.panelSize),
+            contentRect: CGRect(origin: .zero, size: controller.panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -25,15 +41,19 @@ final class IslandPanel: NSPanel {
         isMovable = false
         isMovableByWindowBackground = false
         isReleasedWhenClosed = false
-        // Pass-through is the content view's job, via hitTest. Flipping this
-        // would make the island itself unclickable.
         ignoresMouseEvents = false
         acceptsMouseMovedEvents = true
 
         applyWindowRules()
 
-        contentView = IslandHostingContainer(controller: controller)
-        reposition(on: screen, notch: controller.notch)
+        let container = IslandHostingContainer(controller: controller)
+        contentView = container
+
+        controller.onGeometryChange = { [weak self] in
+            self?.syncGeometry()
+        }
+
+        syncGeometry()
     }
 
     /// Never take key or main: hovering the island must not disturb whatever the
@@ -48,12 +68,24 @@ final class IslandPanel: NSPanel {
         collectionBehavior = Self.islandCollectionBehavior
     }
 
-    func reposition(on screen: NSScreen, notch: NotchGeometry) {
-        let size = IslandMetrics.panelSize
+    func reposition(on screen: NSScreen) {
+        screenFrame = screen.frame
+        syncGeometry()
+    }
+
+    /// Resize and reposition to match the controller, then let the container
+    /// refresh its tracking area against the new bounds.
+    private func syncGeometry() {
+        let size = controller.panelSize
         // Centred on the notch, not the screen: they differ, and on synthetic
         // notches the distinction is the whole ball game.
-        let origin = CGPoint(x: notch.rect.midX - size.width / 2,
-                             y: screen.frame.maxY - size.height)
-        setFrame(CGRect(origin: origin, size: size), display: true)
+        let origin = CGPoint(x: controller.notch.rect.midX - size.width / 2,
+                             y: screenFrame.maxY - size.height)
+        let target = CGRect(origin: origin, size: size)
+
+        if frame != target {
+            setFrame(target, display: true)
+        }
+        (contentView as? IslandHostingContainer)?.geometryDidChange()
     }
 }

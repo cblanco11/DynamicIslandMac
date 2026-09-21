@@ -26,40 +26,29 @@ enum PassThroughSelfTest {
             guard let screen = NSScreen.main else { NSApp.terminate(nil); return }
             let notch = ScreenGeometry.notch(for: screen)
             let controller = IslandController(notch: notch)
+            let panel = IslandPanel(screen: screen, controller: controller)
+            panel.orderFrontRegardless()
+            try? await Task.sleep(for: .milliseconds(600))
 
             print("screen \(screen.frame)  notch \(notch.rect)")
+            print("panel  \(panel.frame)")
 
-            // A: exactly as shipped.
-            let a = IslandPanel(screen: screen, controller: controller)
-            a.orderFrontRegardless()
-            try? await Task.sleep(for: .milliseconds(500))
-            probe("A  as shipped (NSHostingView + hitTest)", panel: a, screen: screen, notch: notch)
-
-            // B: no SwiftUI at all -- a bare transparent content view. Isolates
-            // whether NSHostingView's layer is what captures the clicks.
-            a.contentView = NSView(frame: CGRect(origin: .zero, size: IslandMetrics.panelSize))
-            try? await Task.sleep(for: .milliseconds(500))
-            probe("B  bare transparent NSView, no hitTest override", panel: a, screen: screen, notch: notch)
-
-            // C: known-good pass-through. Validates the oracle.
-            a.ignoresMouseEvents = true
-            try? await Task.sleep(for: .milliseconds(500))
-            probe("C  ignoresMouseEvents = true (control)", panel: a, screen: screen, notch: notch)
-
+            let failures = probe(panel: panel, screen: screen, notch: notch)
+            print(failures == 0 ? "\nRESULT: PASS" : "\nRESULT: FAIL (\(failures))")
             NSApp.terminate(nil)
         }
     }
 
-    private static func probe(_ label: String, panel: IslandPanel, screen: NSScreen, notch: NotchGeometry) {
-        let panelRect = panel.frame
+    private static func probe(panel: IslandPanel, screen: NSScreen, notch: NotchGeometry) -> Int {
+        let p = panel.frame
         let probes: [(String, NSPoint, Bool)] = [
-            ("island centre",           NSPoint(x: notch.rect.midX, y: notch.rect.midY), true),
-            ("panel, left of island",   NSPoint(x: panelRect.minX + 30, y: panelRect.midY), false),
-            ("panel, below island",     NSPoint(x: notch.rect.midX, y: panelRect.minY + 20), false),
-            ("menu bar, left of notch", NSPoint(x: panelRect.minX + 10, y: notch.rect.midY), false),
+            ("island centre",          NSPoint(x: notch.rect.midX, y: notch.rect.midY), true),
+            ("menu bar left of panel", NSPoint(x: p.minX - 40, y: notch.rect.midY), false),
+            ("menu bar right of panel",NSPoint(x: p.maxX + 40, y: notch.rect.midY), false),
+            ("below the island",       NSPoint(x: notch.rect.midX, y: p.minY - 40), false),
+            ("far left menu bar",      NSPoint(x: screen.frame.minX + 200, y: notch.rect.midY), false),
         ]
 
-        print("\n\(label)")
         var failures = 0
         for (name, point, expectPanel) in probes {
             let number = NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)
@@ -70,6 +59,6 @@ enum PassThroughSelfTest {
                   + " -> win \(number)  panel=\(hitPanel ? "yes" : "no ")"
                   + "  want=\(expectPanel ? "yes" : "no ")  \(ok ? "PASS" : "FAIL")")
         }
-        print("   => \(failures == 0 ? "PASS" : "FAIL (\(failures))")")
+        return failures
     }
 }

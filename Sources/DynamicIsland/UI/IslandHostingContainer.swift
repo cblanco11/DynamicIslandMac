@@ -2,14 +2,12 @@ import AppKit
 import SwiftUI
 import QuartzCore
 
-/// The panel's content view. Two jobs:
+/// The panel's content view. Hosts the SwiftUI island and owns hover tracking.
 ///
-/// 1. **Pass-through.** `hitTest` returns nil everywhere outside the island, so
-///    clicks reach whatever is underneath. `ignoresMouseEvents` is never
-///    toggled -- that would make the island itself unclickable too.
-/// 2. **Hover.** One `NSTrackingArea`, resized to follow the island, with
-///    `.activeAlways` because an `LSUIElement` app is never the active app.
-///    No global event monitor: nothing fires while the cursor is elsewhere.
+/// Pass-through is the *panel's* job, via its frame -- `hitTest` cannot do it
+/// (CLAUDE.md, "hitTest does not produce click pass-through"). The override here
+/// is still worth keeping: it stops the app reacting to clicks in the shoulder
+/// margin and, once the overlay is on, in the debug readout below the island.
 @MainActor
 final class IslandHostingContainer: NSView {
 
@@ -24,23 +22,22 @@ final class IslandHostingContainer: NSView {
 
     init(controller: IslandController) {
         self.controller = controller
-        super.init(frame: CGRect(origin: .zero, size: IslandMetrics.panelSize))
+        super.init(frame: CGRect(origin: .zero, size: controller.panelSize))
 
         let hosting = NSHostingView(rootView: IslandView(controller: controller))
         hosting.frame = bounds
         hosting.autoresizingMask = [.width, .height]
         addSubview(hosting)
-
-        controller.onGeometryChange = { [weak self] in
-            self?.refreshTracking()
-            self?.syncDisplayLink()
-        }
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used: no storyboards") }
 
-    // MARK: - Pass-through
+    /// Called by the panel after it has resized.
+    func geometryDidChange() {
+        refreshTracking()
+        syncDisplayLink()
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
@@ -64,9 +61,9 @@ final class IslandHostingContainer: NSView {
 
         var options: NSTrackingArea.Options = [.mouseEnteredAndExited, .activeAlways]
 
-        // When the island grows under a cursor that is already inside it, tell
-        // AppKit so it does not synthesise a second `mouseEntered`. Work out
-        // whether that is actually true rather than assuming either way.
+        // When the island grows under a cursor already inside it, say so, or
+        // AppKit synthesises a second `mouseEntered`. Work out whether that is
+        // actually the case rather than assuming either way.
         let cursorInside = cursorPointInSelf().map(rect.contains) ?? false
         if cursorInside { options.insert(.assumeInside) }
         isHovering = cursorInside
@@ -80,8 +77,7 @@ final class IslandHostingContainer: NSView {
     /// `NSEvent.mouseLocation`, not a poll.
     private func cursorPointInSelf() -> NSPoint? {
         guard let window else { return nil }
-        let screenPoint = NSEvent.mouseLocation
-        let windowPoint = window.convertPoint(fromScreen: screenPoint)
+        let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
         return convert(windowPoint, from: nil)
     }
 
@@ -99,7 +95,7 @@ final class IslandHostingContainer: NSView {
 
     // MARK: - Frame rate (debug overlay only)
 
-    func syncDisplayLink() {
+    private func syncDisplayLink() {
         if controller.debugOverlayEnabled {
             guard frameLink == nil else { return }
             let link = displayLink(target: self, selector: #selector(tick(_:)))
@@ -127,7 +123,6 @@ final class IslandHostingContainer: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        refreshTracking()
-        syncDisplayLink()
+        geometryDidChange()
     }
 }

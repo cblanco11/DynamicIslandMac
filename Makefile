@@ -7,7 +7,7 @@ DERIVED     := .build
 APP         := $(DERIVED)/Build/Products/$(CONFIG)/$(SCHEME).app
 BUNDLE_ID   := com.jeffreyotoo.DynamicIsland
 
-.PHONY: all generate build run stop clean log fmtcheck
+.PHONY: all generate build build-verbose run stop clean log test snapshots
 
 all: build
 
@@ -34,6 +34,19 @@ stop:
 run: build stop
 	@open "$(APP)"
 	@echo "→ launched $(APP)"
+
+# Headless regression harnesses. Each prints RESULT: PASS / FAIL and exits.
+BIN := $(APP)/Contents/MacOS/$(SCHEME)
+
+test: build stop
+	@echo "== click routing =="        && $(BIN) -DISelfTest YES
+	@echo "== synthetic notch =="      && $(BIN) -DISelfTest YES -DIForceSyntheticNotch YES
+	@echo "== debug overlay =="        && $(BIN) -DISelfTest YES -DIDebugOverlay YES
+	@echo "== lifecycle =="            && $(BIN) -DILifecycleTest YES
+
+# Renders the island to PNGs -- an LSUIElement app is invisible to screen capture.
+snapshots: build stop
+	@$(BIN) -DIExportSnapshot "$(CURDIR)/$(DERIVED)/island"
 
 clean: stop
 	@rm -rf $(DERIVED) $(SCHEME).xcodeproj

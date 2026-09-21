@@ -15,14 +15,20 @@ make run       # build, kill any running copy, launch the .app
 make stop
 make clean
 make log       # log stream for subsystem com.jeffreyotoo.DynamicIsland
+make test      # all headless regression harnesses (must all print RESULT: PASS)
+make snapshots # render the island to PNGs under .build/
 ```
 
 Debug entry points (NSUserDefaults-style args, so they work on the binary directly):
 
 ```
 DynamicIsland -DIExportSnapshot /tmp/island   # render island PNGs and exit
-DynamicIsland -DISelfTest YES                 # window-server pass-through probe
+DynamicIsland -DISelfTest YES                 # window-server click-routing probe
+DynamicIsland -DILifecycleTest YES            # rebuild idempotency, debounce, wake
 ```
+
+All three print a `RESULT: PASS` / `FAIL` line and exit, so they are usable as
+regression checks. Run them after any change to panel geometry or lifecycle.
 
 Runtime toggles (status item menu, or `defaults write com.jeffreyotoo.DynamicIsland …`):
 
@@ -74,6 +80,19 @@ canBecomeKey/Main   false   — hovering must not disturb the user's focused win
 ```
 
 `applyWindowRules()` is re-applied on wake, not only at construction.
+
+**The panel's frame is the interactive region.** Because the window server routes
+clicks by frame (see the first gotcha), the panel is sized to the island plus its
+12pt shoulder margin and resized to follow it -- but only at transition
+boundaries, never per frame. It grows to the target before the shape starts
+expanding and shrinks only after the shape has finished collapsing, both driven
+by `IslandController.onGeometryChange`. Two resizes per hover cycle, so the morph
+is still one uninterrupted geometry animation inside a stationary window.
+
+Residual cost: the 12pt shoulder margin either side of the island does cover the
+menu bar and does swallow clicks there. On a notched Mac that strip is unusable
+anyway. While expanded the panel covers ~404pt of menu bar, but only for as long
+as the user is actively hovering it.
 
 ## Gotchas
 
@@ -147,6 +166,13 @@ app render its own view hierarchy through `ImageRenderer` instead, which
 exercises the real `IslandView` / `IslandShape`. Hover behaviour is verified from
 the persisted `state ->` log lines (logged at `.default`, not `.info`, so
 `log show` retains them).
+
+### A full-screen app's menu-bar overlay also sits at level 26 -- verified macOS 26.7
+
+With TextEdit full-screen, its own menu-bar overlay window is at the same level
+as the island panel. Ordering within a level decides the winner, so the island is
+ordered front (`orderFrontRegardless`) on every rebuild and reassert. Verified:
+the island both draws over and receives hover events above a full-screen app.
 
 ## Budget
 

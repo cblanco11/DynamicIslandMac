@@ -35,14 +35,14 @@ final class PanelManager {
                 entry.controller.resetImmediately()
                 entry.controller.update(notch: notch)
                 entry.panel.applyWindowRules()
-                entry.panel.reposition(on: screen, notch: notch)
+                entry.panel.reposition(on: screen)
                 entry.panel.orderFrontRegardless()
             } else {
                 let controller = IslandController(notch: notch)
                 let panel = IslandPanel(screen: screen, controller: controller)
                 panel.orderFrontRegardless()
                 entries[id] = Entry(panel: panel, controller: controller)
-                log.info("""
+                log.notice("""
                     built panel for display \(id, privacy: .public) \
                     notch \(notch.rect.width, privacy: .public)x\(notch.rect.height, privacy: .public) \
                     synthetic=\(notch.isSynthetic, privacy: .public)
@@ -55,7 +55,7 @@ final class PanelManager {
             entry.panel.orderOut(nil)
             entry.panel.close()
             entries.removeValue(forKey: id)
-            log.info("tore down panel for departed display \(id, privacy: .public)")
+            log.notice("tore down panel for departed display \(id, privacy: .public)")
         }
     }
 
@@ -65,7 +65,7 @@ final class PanelManager {
         for screen in NSScreen.screens {
             guard let id = ScreenGeometry.displayID(for: screen), let entry = entries[id] else { continue }
             entry.panel.applyWindowRules()
-            entry.panel.reposition(on: screen, notch: entry.controller.notch)
+            entry.panel.reposition(on: screen)
             entry.panel.orderFrontRegardless()
         }
     }

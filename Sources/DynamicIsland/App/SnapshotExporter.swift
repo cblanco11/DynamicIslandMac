@@ -43,7 +43,9 @@ enum SnapshotExporter {
     }
 
     private static func render(controller: IslandController, to url: URL) -> Bool {
-        let size = IslandMetrics.panelSize
+        // Fixed canvas, larger than any island state, so the two snapshots
+        // are directly comparable and the shoulders are never clipped.
+        let size = CGSize(width: 640, height: 220)
 
         let content = ZStack(alignment: .top) {
             // Stand-in for the menu bar strip and the desktop below it, so the
