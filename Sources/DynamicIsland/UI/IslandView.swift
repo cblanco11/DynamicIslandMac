@@ -65,7 +65,8 @@ struct IslandContentView: View {
         case .hover:
             media { snapshot in
                 MediaHoverView(snapshot: snapshot, tint: tint,
-                               notchWidth: controller.notch.rect.width)
+                               notchWidth: controller.notch.rect.width,
+                               notchHeight: controller.notch.rect.height)
             }
 
         case .expanded:
@@ -73,6 +74,7 @@ struct IslandContentView: View {
                 MediaExpandedView(
                     snapshot: snapshot,
                     tint: tint,
+                    notchHeight: controller.notch.rect.height,
                     onCommand: { controller.onTransport?($0) },
                     onDismiss: { controller.islandClicked() }
                 )

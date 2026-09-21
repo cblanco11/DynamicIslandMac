@@ -7,8 +7,15 @@ enum IslandMetrics {
 
     /// Hover is a hint, not a reveal: a small step up from the resting pill so
     /// it reads as clickable without committing the screen space.
-    static let hoverExtension: CGFloat = 74
-    static let hoverHeight: CGFloat = 46
+    ///
+    /// Tall enough to carry a title row *below* the notch. Anything drawn in the
+    /// notch's x-range above `notch.height` is behind the physical camera
+    /// housing and simply cannot be seen.
+    static let hoverExtension: CGFloat = 68
+    static let hoverHeight: CGFloat = 62
+
+    /// Progress bar thickness. Measured from the reference.
+    static let progressBarHeight: CGFloat = 6
 
     /// How far the peek pill extends past the notch on each side. Artwork sits
     /// in the left extension, the playing indicator in the right -- the notch

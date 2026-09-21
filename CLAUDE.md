@@ -343,13 +343,41 @@ without one leaves the island in `.closed` and the top-edge assertion passes
 having tested nothing. The harness seeds a synthetic `NowPlaying` and drives
 closed -> peek -> hover -> expanded -> hover, covering every resize.
 
+### The notch eats anything drawn behind it
+
+The island is drawn over the top of the screen, and the notch is a physical
+cutout: there is no display there. Anything inside the notch's **x-range** and
+above `notch.rect.height` (32pt here) is behind the camera housing and simply
+cannot be seen -- it renders fine in a snapshot and is invisible on the machine.
+
+This bit the expanded player: the title sits right of the artwork, which puts it
+in the notch's x-range, and at y=18 its top half was hidden. The reference
+solves it by bottom-aligning the title/artist column inside the artwork's 56pt
+row, which lands the title at ~44pt. Measured reference 44.6pt, ours 44.5pt.
+
+The artwork itself may start at y=18 because it sits *left* of the notch, and
+the waveform may sit high because it is *right* of it. The rule is about
+x-range, not about being near the top.
+
+`MediaHoverView` has the same constraint with less room, so it puts artwork and
+waveform in the extensions either side of the notch and drops the title onto a
+second row below it.
+
 ### Measure the reference, don't eyeball it
 
 The expanded player's dimensions come from measuring the reference screenshot
-(island 373 x 174pt, artwork 56pt, 33pt left inset, 18pt top inset) and then
-measuring the render back. Eyeballing had it 23pt too short with the artwork a
-third too large, and put the progress bar beside the artwork rather than
-full-width beneath it.
+and then measuring the render back. Current agreement:
+
+| | reference | ours |
+|---|---|---|
+| island | 373 x 174pt | 374 x 174pt |
+| title top | 44.6pt | 44.5pt |
+| progress bar | 6pt thick, y 90.7-96.0 | 6pt thick, y 90-96 |
+| transport centres | inset 56pt each edge | inset 56pt each edge |
+
+Eyeballing had the island 23pt too short, the artwork a third too large, the
+progress bar half as thick, the buttons spread to the full width, and the
+progress bar beside the artwork rather than full-width beneath it.
 
 ## Budget
 
