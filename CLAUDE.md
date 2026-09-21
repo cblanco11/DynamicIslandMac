@@ -25,6 +25,7 @@ Debug entry points (NSUserDefaults-style args, so they work on the binary direct
 DynamicIsland -DIExportSnapshot /tmp/island   # render island PNGs and exit
 DynamicIsland -DISelfTest YES                 # window-server click-routing probe
 DynamicIsland -DILifecycleTest YES            # rebuild idempotency, debounce, wake
+DynamicIsland -DIExportMorph /tmp/morph       # filmstrip comparing morph springs
 ```
 
 All three print a `RESULT: PASS` / `FAIL` line and exit, so they are usable as
@@ -37,6 +38,7 @@ Runtime toggles (status item menu, or `defaults write com.jeffreyotoo.DynamicIsl
 | `DIForceSyntheticNotch` | pretend every screen is notchless |
 | `DIDebugOverlay` | state + fps readout under the island |
 | `DIHoverInDelayMS` / `DIHoverOutDelayMS` | hover timing (default 120 / 350) |
+| `DIMorphDuration` / `DIMorphBounce` | morph spring, floats (default 0.45 / 0.30) |
 
 ## Environment
 
@@ -173,6 +175,31 @@ With TextEdit full-screen, its own menu-bar overlay window is at the same level
 as the island panel. Ordering within a level decides the winner, so the island is
 ordered front (`orderFrontRegardless`) on every rebuild and reassert. Verified:
 the island both draws over and receives hover events above a full-screen app.
+
+### The morph is symmetric; it does not *look* symmetric -- and why
+
+Measured off the real spring curve via `-DIExportMorph`, the island grows by an
+identical amount left and right at every frame, and its horizontal growth
+(97.7pt *each side*) exceeds its vertical growth (88.2pt total). There is no
+anchoring bug.
+
+It still reads as "dropping out of the notch", for two reasons:
+
+- The sideways growth happens against the **dark menu bar** -- black on dark
+  grey, almost no contrast -- while the downward growth appears over bright
+  wallpaper. The only high-contrast motion is downward.
+- The original spring settled in **242ms with effectively no overshoot**, so
+  there was no lingering motion at the left and right edges for the eye to
+  catch.
+
+Hence the default spring has bounce (`Spring(duration: 0.45, bounce: 0.30)`,
++4.5pt overshoot each side). Overshoot is doing perceptual work here, not
+decoration. Retune live with `DIMorphDuration` / `DIMorphBounce`.
+
+`IslandMetrics.settleDuration(from:to:spring:)` derives the panel-shrink delay
+from the spring by simulation rather than hardcoding it -- the previous
+hardcoded 420ms silently stopped matching the curve. The panel must never shrink
+before the shape has finished collapsing or the island is clipped mid-morph.
 
 ## Budget
 

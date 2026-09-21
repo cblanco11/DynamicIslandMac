@@ -136,7 +136,7 @@ final class IslandController {
     var animation: Animation {
         reduceMotion
             ? .easeOut(duration: IslandMetrics.reducedMotionDuration.seconds)
-            : .spring(response: 0.38, dampingFraction: 0.78)
+            : .spring(IslandMetrics.morphSpring)
     }
 
     // MARK: - Hover
@@ -179,7 +179,13 @@ final class IslandController {
         onGeometryChange?()
 
         morphTask?.cancel()
-        let settle = reduceMotion ? IslandMetrics.reducedMotionDuration : IslandMetrics.morphDuration
+        // Derived from the live spring, so retuning the curve cannot leave the
+        // panel shrinking before the shape has finished collapsing.
+        let settle = reduceMotion
+            ? IslandMetrics.reducedMotionDuration
+            : IslandMetrics.settleDuration(from: closedSize,
+                                           to: IslandMetrics.expandedSize,
+                                           spring: IslandMetrics.morphSpring)
         morphTask = Task { [weak self] in
             try? await Task.sleep(for: settle)
             guard !Task.isCancelled, let self else { return }
