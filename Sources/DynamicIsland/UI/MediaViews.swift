@@ -98,9 +98,11 @@ struct MediaExpandedView: View {
                 Spacer(minLength: 6)
 
                 // Clear of the notch on the right, so it can sit high.
+                // Scaled with the transport controls, or it reads as undersized
+                // next to them.
                 Waveform(isPlaying: snapshot.isPlaying, tint: tint,
-                         barCount: 5, barWidth: 2, maxHeight: 13)
-                    .padding(.top, 3)
+                         barCount: 5, barWidth: 2.5, maxHeight: 16)
+                    .padding(.top, 2)
             }
             .frame(height: 56)
 
@@ -113,16 +115,17 @@ struct MediaExpandedView: View {
                 control("backward.fill", .previousTrack)
                 Spacer(minLength: 0)
                 control(snapshot.isPlaying ? "pause.fill" : "play.fill",
-                        .togglePlayPause, size: 18)
+                        .togglePlayPause, size: Self.playSymbolSize)
                 Spacer(minLength: 0)
                 control("forward.fill", .nextTrack)
                 Spacer(minLength: 0)
                 outputDevice
             }
-            // Measured from the reference: button centres sit 56pt in from each
-            // island edge, not spread to the full width.
+            // Button centres sit ~56pt in from each island edge, as measured
+            // from the reference. The larger hit frames then close the gaps
+            // between glyphs to ~40pt, a little tighter than the reference's 43.
             .padding(.horizontal, 8)
-            .padding(.top, 9)
+            .padding(.top, 8)
 
             Spacer(minLength: 0)
         }
@@ -135,6 +138,14 @@ struct MediaExpandedView: View {
         .onTapGesture { onDismiss() }
     }
 
+    /// Sized from the reference: side glyphs render ~24x14pt, the play/pause
+    /// glyph ~17x23pt. SF Symbols at these point sizes land within a point of
+    /// that; the hit frame is deliberately larger than the glyph so the
+    /// controls stay comfortable to click.
+    private static let symbolSize: CGFloat = 17.5
+    private static let playSymbolSize: CGFloat = 24
+    private static let hitFrame = CGSize(width: 38, height: 30)
+
     /// Reflects the real default output device, and opens Sound settings.
     /// Read at render time rather than observed: the player is only on screen
     /// while the user is looking at it.
@@ -146,9 +157,9 @@ struct MediaExpandedView: View {
             }
         } label: {
             Image(systemName: device.symbol)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: Self.symbolSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.92))
-                .frame(width: 30, height: 24)
+                .frame(width: Self.hitFrame.width, height: Self.hitFrame.height)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -156,14 +167,14 @@ struct MediaExpandedView: View {
     }
 
     private func control(_ symbol: String, _ command: MediaRemoteHelper.Command,
-                         size: CGFloat = 13, active: Bool = false) -> some View {
+                         size: CGFloat = symbolSize, active: Bool = false) -> some View {
         Button {
             onCommand(command)
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: size, weight: .semibold))
                 .foregroundStyle(active ? tint : .white.opacity(0.92))
-                .frame(width: 30, height: 24)
+                .frame(width: Self.hitFrame.width, height: Self.hitFrame.height)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

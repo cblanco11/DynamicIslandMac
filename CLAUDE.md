@@ -374,6 +374,13 @@ and then measuring the render back. Current agreement:
 | title top | 44.6pt | 44.5pt |
 | progress bar | 6pt thick, y 90.7-96.0 | 6pt thick, y 90-96 |
 | transport centres | inset 56pt each edge | inset 56pt each edge |
+| transport glyphs | 20x16, 24x14, 25x14 | 20x16, 24x14, 25x14 |
+| gaps between glyphs | 43, 45, 45, 39pt | 40, 44, 42, 38pt |
+
+Control glyph size is set by the **rendered glyph**, not the font point size:
+SF Symbols at 17.5pt (24pt for play/pause) land within a point of the
+reference. The hit frame (38x30) is deliberately larger than the glyph, so
+enlarging the icons also closes the visual gaps without moving any centre.
 
 Eyeballing had the island 23pt too short, the artwork a third too large, the
 progress bar half as thick, the buttons spread to the full width, and the
