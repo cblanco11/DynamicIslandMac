@@ -15,6 +15,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if MediaProbe.requested {
+            MediaProbe.run()
+            return
+        }
+
+        if MediaRemoteProbe.requested {
+            MediaRemoteProbe.run()
+            return
+        }
+
         if let prefix = LiveMorphCapture.requestedPrefix {
             LiveMorphCapture.run(prefix: prefix)
             return

@@ -38,6 +38,14 @@ targets:
       - path: Sources/DynamicIsland
         excludes:
           - "Resources/Info.plist"
+      # Loaded at runtime by /usr/bin/perl, never linked against, so it is
+      # copied rather than embedded as a dependency.
+      - path: .build/adapter/MediaRemoteAdapter.framework
+        buildPhase:
+          copyFiles:
+            destination: frameworks
+      - path: Vendor/mediaremote-adapter/bin/mediaremote-adapter.pl
+        buildPhase: resources
     settings:
       base:
         PRODUCT_NAME: DynamicIsland

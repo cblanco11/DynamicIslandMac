@@ -3,8 +3,8 @@ import SwiftUI
 import Observation
 import os
 
-/// Owns the island's state machine and hover timing for a single screen.
-/// Views read it; nothing else mutates it.
+/// Owns the island's state machine, hover timing and panel geometry for a single
+/// screen. Views read it; nothing else mutates it.
 @MainActor
 @Observable
 final class IslandController {
@@ -12,19 +12,8 @@ final class IslandController {
     private(set) var state: IslandState = .closed
     private(set) var notch: NotchGeometry
 
-    /// True from the moment a morph starts until it has settled. Keeps the hit
-    /// region wide mid-flight.
+    /// True from the moment a morph starts until it has settled.
     private(set) var isMorphing = false
-
-    /// Set the instant the cursor arrives, before the hover delay has elapsed.
-    ///
-    /// The panel is grown to its expanded size *here*, while the island is still
-    /// closed and completely static, so that no window resize ever overlaps the
-    /// morph. Resizing mid-animation makes Core Animation composite the old
-    /// backing store with centre gravity until SwiftUI redraws, which drops the
-    /// island into the middle of the new panel and then lets it climb back --
-    /// seen as the island detaching from the notch and growing upward into it.
-    private(set) var isPreparingExpansion = false
 
     private(set) var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
@@ -38,27 +27,38 @@ final class IslandController {
         }
     }
 
-    /// Fired whenever `interactiveFrame` or the overlay state changes, so the
-    /// container can resize its tracking area and start/stop the display link.
-    /// An explicit callback rather than observation plumbing: this crosses into
-    /// AppKit, where a re-arming `withObservationTracking` loop is more machinery
-    /// than the one signal warrants.
+    /// Fired whenever `panelSize` or `interactiveFrame` changes, so the panel can
+    /// resize and the container can refresh its tracking area.
     var onGeometryChange: (@MainActor () -> Void)?
 
-    @ObservationIgnored private static let log =
-        Logger(subsystem: "com.jeffreyotoo.DynamicIsland", category: "state")
+    /// Transport commands from the island's controls, routed back to whoever
+    /// owns the media provider.
+    var onTransport: (@MainActor (MediaRemoteHelper.Command) -> Void)?
+
+    /// The panel is held at least this large regardless of the current state.
+    ///
+    /// This is how "never resize the window while the morph is running" is
+    /// enforced: the reservation is taken *before* a transition, the window
+    /// resizes while nothing is animating, and it is only released once the
+    /// morph has fully settled. See CLAUDE.md.
+    ///
+    /// Deliberately **observed**: `panelSize` derives from it, so hiding it from
+    /// observation stops SwiftUI re-laying out when the panel grows, and
+    /// `NSHostingView` then centres the stale, smaller content in the new bounds
+    /// -- the island visibly unpins from the notch.
+    private var reservation: CGSize?
 
     @ObservationIgnored private var hoverTask: Task<Void, Never>?
     @ObservationIgnored private var morphTask: Task<Void, Never>?
     @ObservationIgnored private var reduceMotionObserver: NSObjectProtocol?
+    @ObservationIgnored private static let log =
+        Logger(subsystem: "com.jeffreyotoo.DynamicIsland", category: "state")
 
     init(notch: NotchGeometry) {
         self.notch = notch
-        // Read live, not once at launch -- the user can flip this while we run.
         reduceMotionObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
-            object: nil,
-            queue: .main
+            object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -66,15 +66,10 @@ final class IslandController {
         }
     }
 
-    /// Explicit teardown rather than `deinit`: a nonisolated `deinit` cannot
-    /// touch MainActor-isolated, non-Sendable state under Swift 6. `PanelManager`
-    /// is the sole owner of controllers and calls this when a display departs.
     func tearDown() {
-        hoverTask?.cancel()
-        morphTask?.cancel()
-        hoverTask = nil
-        morphTask = nil
-        onGeometryChange = nil
+        hoverTask?.cancel(); morphTask?.cancel()
+        hoverTask = nil; morphTask = nil
+        onGeometryChange = nil; onTransport = nil
         if let reduceMotionObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(reduceMotionObserver)
             self.reduceMotionObserver = nil
@@ -91,28 +86,30 @@ final class IslandController {
 
     var closedSize: CGSize { notch.rect.size }
 
-    /// The island's own size in the current state.
-    var currentSize: CGSize {
+    var peekSize: CGSize {
+        CGSize(width: notch.rect.width + 2 * IslandMetrics.peekExtension,
+               height: notch.rect.height)
+    }
+
+    func size(for state: IslandState) -> CGSize {
         switch state {
-        case .closed:           closedSize
-        case .peek, .expanded:  IslandMetrics.expandedSize
+        case .closed:   closedSize
+        case .peek:     peekSize
+        case .expanded: IslandMetrics.expandedSize
         }
     }
 
-    /// The island size the panel must be able to contain right now. While a
-    /// morph is in flight this is the larger of source and target, so the panel
-    /// is already big enough before the shape grows into it, and only shrinks
-    /// once the shape has finished collapsing.
+    var currentSize: CGSize { size(for: state) }
+
     private var containedSize: CGSize {
-        guard isMorphing || isPreparingExpansion else { return currentSize }
-        return CGSize(width: max(currentSize.width, IslandMetrics.expandedSize.width),
-                      height: max(currentSize.height, IslandMetrics.expandedSize.height))
+        guard let reservation else { return currentSize }
+        return CGSize(width: max(currentSize.width, reservation.width),
+                      height: max(currentSize.height, reservation.height))
     }
 
     /// The panel's size. The panel frame *is* the interactive region: the window
-    /// server routes clicks by frame, so anything the panel covers is a click the
-    /// app underneath does not get. See CLAUDE.md, "hitTest does not produce
-    /// click pass-through".
+    /// server routes clicks by frame, so anything the panel covers is a click
+    /// the app underneath does not get.
     var panelSize: CGSize {
         let island = containedSize
         return CGSize(
@@ -121,24 +118,21 @@ final class IslandController {
         )
     }
 
-    /// The island's frame inside the panel: horizontally centred, pinned to the
-    /// top edge. Top-left origin, matching the flipped container view.
+    /// The island's frame inside the panel: centred, pinned to the top edge.
     var islandFrame: CGRect {
         let size = currentSize
         return CGRect(x: (panelSize.width - size.width) / 2, y: 0,
                       width: size.width, height: size.height)
     }
 
-    /// What the tracking area covers. The union of source and target while
-    /// morphing: if this shrank the moment a collapse began, a fast hover-out
-    /// would fall through the gap and strand the island open.
+    /// What the tracking area covers. Grown to the reservation while morphing so
+    /// a fast hover-out cannot fall through a gap and strand the island open.
     var interactiveFrame: CGRect {
         let resting = islandFrame
-        guard isMorphing else { return resting }
-        let expanded = CGRect(x: (panelSize.width - IslandMetrics.expandedSize.width) / 2, y: 0,
-                              width: IslandMetrics.expandedSize.width,
-                              height: IslandMetrics.expandedSize.height)
-        return resting.union(expanded)
+        guard isMorphing, let reservation else { return resting }
+        let wide = CGRect(x: (panelSize.width - reservation.width) / 2, y: 0,
+                          width: reservation.width, height: reservation.height)
+        return resting.union(wide)
     }
 
     // MARK: - Animation
@@ -149,40 +143,34 @@ final class IslandController {
             : .spring(IslandMetrics.morphSpring)
     }
 
+    // MARK: - Activities
+
+    /// What the island is showing when it is not being hovered.
+    @ObservationIgnored private var restingActivity: Activity?
+
+    func present(_ activity: Activity?) {
+        restingActivity = activity
+        // Hovering wins; the new activity is picked up when the hover ends.
+        guard state != .expanded else { return }
+        transition(to: restingState)
+    }
+
+    private var restingState: IslandState {
+        restingActivity.map { IslandState.peek($0) } ?? .closed
+    }
+
     // MARK: - Hover
 
     func mouseEntered() {
-        // Grow the panel now, while nothing is animating.
-        if !isPreparingExpansion {
-            isPreparingExpansion = true
-            onGeometryChange?()
-        }
-        scheduleHover(after: IslandMetrics.hoverInDelay) { controller in
-            controller.transition(to: .expanded)
-        }
+        // Reserve the expanded panel now, while nothing is animating.
+        reserve(IslandMetrics.expandedSize)
+        scheduleHover(after: IslandMetrics.hoverInDelay) { $0.transition(to: .expanded) }
     }
 
     func mouseExited() {
-        scheduleHover(after: IslandMetrics.hoverOutDelay) { controller in
-            if controller.state.isClosed {
-                // Left before the island ever opened: just give the panel back.
-                controller.endExpansionPreparation()
-            } else {
-                controller.transition(to: .closed)
-            }
-        }
+        scheduleHover(after: IslandMetrics.hoverOutDelay) { $0.transition(to: $0.restingState) }
     }
 
-    /// Shrink the panel back. Only ever called when the island is closed and
-    /// settled, so again no resize overlaps an animation.
-    private func endExpansionPreparation() {
-        guard isPreparingExpansion else { return }
-        isPreparingExpansion = false
-        onGeometryChange?()
-    }
-
-    /// Cancels any pending hover intent and replaces it. One `Task` at a time and
-    /// no repeating timer -- an idle app must have nothing scheduled at all.
     private func scheduleHover(after delay: Duration,
                                _ body: @escaping @MainActor (IslandController) -> Void) {
         hoverTask?.cancel()
@@ -193,13 +181,43 @@ final class IslandController {
         }
     }
 
+    // MARK: - Transitions
+
+    /// Grow the panel if needed, let that resize land, *then* animate. A window
+    /// resize that overlaps the morph makes Core Animation composite the stale
+    /// backing store with centre gravity, which visibly unpins the island from
+    /// the notch.
     private func transition(to next: IslandState) {
         guard next != state else { return }
+
+        if reserve(size(for: next)) {
+            Task { [weak self] in
+                // One display tick, so the resize is committed before we animate.
+                try? await Task.sleep(for: .milliseconds(20))
+                guard !Task.isCancelled, let self, state != next else { return }
+                commit(next)
+            }
+        } else {
+            commit(next)
+        }
+    }
+
+    private func commit(_ next: IslandState) {
         state = next
-        // .default rather than .info so the transition is persisted and
-        // `log show` can confirm the hover machine actually fired.
         Self.log.log("state -> \(String(describing: next), privacy: .public)")
         beginMorph()
+    }
+
+    /// Returns true when the panel actually had to grow.
+    @discardableResult
+    private func reserve(_ size: CGSize) -> Bool {
+        let target = CGSize(width: max(size.width, containedSize.width),
+                            height: max(size.height, containedSize.height))
+        guard target != reservation else { return false }
+        let grew = target.width > containedSize.width || target.height > containedSize.height
+        reservation = target
+        onGeometryChange?()
+        return grew
     }
 
     private func beginMorph() {
@@ -207,8 +225,6 @@ final class IslandController {
         onGeometryChange?()
 
         morphTask?.cancel()
-        // Derived from the live spring, so retuning the curve cannot leave the
-        // panel shrinking before the shape has finished collapsing.
         let settle = reduceMotion
             ? IslandMetrics.reducedMotionDuration
             : IslandMetrics.settleDuration(from: closedSize,
@@ -218,27 +234,28 @@ final class IslandController {
             try? await Task.sleep(for: settle)
             guard !Task.isCancelled, let self else { return }
             isMorphing = false
-            if state.isClosed { isPreparingExpansion = false }
+            // Only now may the panel shrink.
+            reservation = nil
             onGeometryChange?()
         }
+    }
+
+    /// Escape hatch for display rebuilds: drop to closed with no animation.
+    func resetImmediately() {
+        hoverTask?.cancel(); morphTask?.cancel()
+        hoverTask = nil; morphTask = nil
+        isMorphing = false
+        reservation = nil
+        restingActivity = nil
+        state = .closed
+        onGeometryChange?()
     }
 
     /// Snapshot/debug only: jump straight to a state with no animation.
     func forceState(_ next: IslandState) {
         state = next
         isMorphing = false
-    }
-
-    /// Escape hatch for display rebuilds: drop to closed with no animation.
-    func resetImmediately() {
-        hoverTask?.cancel()
-        morphTask?.cancel()
-        hoverTask = nil
-        morphTask = nil
-        isMorphing = false
-        isPreparingExpansion = false
-        state = .closed
-        onGeometryChange?()
+        reservation = nil
     }
 }
 

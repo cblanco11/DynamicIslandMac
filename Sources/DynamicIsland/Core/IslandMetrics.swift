@@ -3,7 +3,12 @@ import SwiftUI
 /// Every tunable number in one place. Hover delays are overridable via
 /// `UserDefaults` so timing can be dialled in without a rebuild.
 enum IslandMetrics {
-    static let expandedSize = CGSize(width: 380, height: 120)
+    static let expandedSize = CGSize(width: 380, height: 128)
+
+    /// How far the peek pill extends past the notch on each side. Artwork sits
+    /// in the left extension, the playing indicator in the right -- the notch
+    /// itself stays visually untouched.
+    static let peekExtension: CGFloat = 46
 
     /// The concave top corners flare this far outside the island's own rect, so
     /// the panel needs this much margin on each side or they get clipped.

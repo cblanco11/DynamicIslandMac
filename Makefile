@@ -7,11 +7,25 @@ DERIVED     := .build
 APP         := $(DERIVED)/Build/Products/$(CONFIG)/$(SCHEME).app
 BUNDLE_ID   := com.jeffreyotoo.DynamicIsland
 
-.PHONY: all generate build build-verbose run stop clean log test snapshots
+.PHONY: all adapter generate build build-verbose run stop clean log test snapshots
+
+# mediaremote-adapter: MediaRemote is entitlement-gated for third-party apps, so
+# the app shells out to Apple-signed /usr/bin/perl, which loads this framework.
+# Built from the pinned submodule rather than vendored as a binary.
+ADAPTER_SRC   := Vendor/mediaremote-adapter
+ADAPTER_BUILD := $(DERIVED)/adapter
+ADAPTER_FW    := $(ADAPTER_BUILD)/MediaRemoteAdapter.framework
+
+adapter: $(ADAPTER_FW)
+
+$(ADAPTER_FW): $(ADAPTER_SRC)/CMakeLists.txt
+	@cmake -S $(ADAPTER_SRC) -B $(ADAPTER_BUILD) -DCMAKE_BUILD_TYPE=Release > /dev/null
+	@cmake --build $(ADAPTER_BUILD) --config Release > /dev/null
+	@echo "→ built MediaRemoteAdapter.framework"
 
 all: build
 
-generate:
+generate: adapter
 	@xcodegen generate --quiet
 	@echo "→ regenerated $(SCHEME).xcodeproj"
 
