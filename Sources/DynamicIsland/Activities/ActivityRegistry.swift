@@ -12,6 +12,10 @@ final class ActivityRegistry {
 
     private(set) var activities: [Activity] = []
 
+    /// Fired whenever the top activity changes. A callback rather than
+    /// observation plumbing because the consumer is AppKit.
+    var onChange: (@MainActor (Activity?) -> Void)?
+
     /// What the island should currently present, or nil for nothing.
     var top: Activity? { activities.first }
 
@@ -67,7 +71,9 @@ final class ActivityRegistry {
             .map(\.activity)
 
         guard merged != activities else { return }
+        let previousTop = activities.first
         activities = merged
+        if merged.first != previousTop { onChange?(merged.first) }
         scheduleSweep()
     }
 

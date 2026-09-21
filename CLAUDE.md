@@ -27,6 +27,8 @@ DynamicIsland -DISelfTest YES                 # window-server click-routing prob
 DynamicIsland -DILifecycleTest YES            # rebuild idempotency, debounce, wake
 DynamicIsland -DIExportMorph /tmp/morph       # filmstrip comparing morph springs
 DynamicIsland -DICaptureMorph /tmp/live       # capture a REAL morph, frame by frame
+DynamicIsland -DIMediaTest YES                # can THIS bundle read MediaRemote directly?
+DynamicIsland -DIMediaStream YES              # live now-playing via the bundled helper
 ```
 
 All three print a `RESULT: PASS` / `FAIL` line and exit, so they are usable as
@@ -53,10 +55,25 @@ private-framework use planned for Milestones 2–3.
 ## Architecture
 
 ```
-App/    entry point, delegate, status item, debug harnesses
-Core/   geometry, state machine, panel lifecycle, screen observation
-UI/     panel, container view, shape, SwiftUI views
+App/         entry point, delegate, status item, debug harnesses
+Core/        geometry, state machine, panel lifecycle, screen observation
+Activities/  ActivityProvider protocol, Activity model, registry
+Media/       MediaRemote helper process, NowPlaying model, artwork tint
+UI/          panel, container view, shape, SwiftUI views
+Vendor/      mediaremote-adapter submodule, pinned
 ```
+
+### Activities
+
+`ActivityProvider` is the seam every feature goes through; media is one
+implementation, not a special case. Providers push **whole snapshots**, not
+deltas, so a provider that crashes and restarts cannot leak stale entries -- its
+next snapshot replaces everything it had. `ActivityKind` is a closed enum so
+island views stay pure functions of state and `IslandContentView` stays
+exhaustive: adding a provider is a compile error until the island can draw it.
+
+`ActivityRegistry` merges providers and ranks by priority, then recency, then
+registration order, so the result is stable rather than arbitrary.
 
 - `IslandState` — explicit `.closed / .peek(Activity) / .expanded` enum.
 - `IslandController` — one per screen. `@MainActor @Observable`. Owns the state,
@@ -230,8 +247,63 @@ from the spring by simulation rather than hardcoding it -- the previous
 hardcoded 420ms silently stopped matching the curve. The panel must never shrink
 before the shape has finished collapsing or the island is clipped mid-morph.
 
+### MediaRemote is entitlement-gated -- verified macOS 26.7
+
+`MRMediaRemoteGetNowPlayingInfo` invokes its callback with **nil** when called
+from this bundle, and returns full data from an Apple-signed process. Measured
+A/B/A seconds apart with the same media state:
+
+| caller | result |
+|---|---|
+| Apple-signed `swift-frontend` (`swift file.swift`) | 32 keys |
+| ad-hoc-signed `DynamicIsland.app` | nil |
+| Apple-signed `swift-frontend` again | 32 keys |
+
+**Do not test this with `swift somefile.swift`.** That runs inside an
+Apple-signed process and will tell you direct access works. It only works there
+because of the very entitlement the app lacks. Use `-DIMediaTest YES`, which
+runs inside the real bundle.
+
+Hence `MediaRemoteHelper`: `/usr/bin/perl` is Apple-signed and entitled, so the
+adapter framework is loaded there and the JSON piped back. Degradation: if the
+bundled helper is missing, the provider publishes an empty snapshot and the
+island shows no media rather than stalling on stale data.
+
+### The media helper does not die with its parent -- verified macOS 26.7
+
+The helper only notices our death when a write to the closed stdout pipe raises
+SIGPIPE, and while nothing is playing it never writes -- so it lingers forever,
+re-parented to launchd. Every crash or `SIGKILL` leaks one. macOS has no
+`PR_SET_PDEATHSIG` and the vendored script has no parent-watch option.
+
+Two defences, both needed:
+- `MediaRemoteHelper.reapOrphanedHelpers()` at launch kills perl processes
+  running *our* bundled script whose parent is 1. Scoping it to orphans means a
+  second copy of the app running normally is left alone.
+- `AppDelegate.installSignalHandlers()` handles SIGTERM/SIGINT, which otherwise
+  skip `applicationWillTerminate` entirely.
+
+### Stream payloads are large and partial
+
+Lines reach ~200KB because artwork arrives as base64 in every full payload, so
+the reader splits a byte buffer on newlines rather than trusting a line API.
+`diff: true` payloads carry only changed fields and must be merged into running
+state, not substituted for it. Artwork briefly disappears during timeline
+scrubs, so it is carried forward while the track identity is unchanged.
+
+`--debounce=200` is not optional for the CPU budget: without it the app burned
+0.39s of CPU per 60s idle, with it 0.01s.
+
 ## Budget
 
 Under ~50MB RSS, near-zero CPU when idle. No polling loops anywhere: hover uses a
 single `NSTrackingArea`, timing uses one cancellable `Task` at a time, and the
 debug overlay's `CADisplayLink` runs only while the overlay is visible.
+
+Media adds a child process but not a polling loop: the stream is event-driven and
+debounced, playback position is extrapolated from `elapsedTime` + `timestamp`
+rather than polled, and the `TimelineView`s driving the progress bar and the
+playing indicator only schedule while playback is actually running.
+
+Measured with media connected and playback paused: **0.01s CPU per 60s idle**,
+15MB `phys_footprint`.

@@ -19,7 +19,6 @@ enum SnapshotExporter {
     }
 
     static func exportAndExit(prefix: String) {
-        // Fixed geometry so snapshots are reproducible on any machine.
         let notch = NotchGeometry(
             rect: CGRect(x: 0, y: 0,
                          width: ScreenGeometry.syntheticNotchSize.width,
@@ -27,8 +26,46 @@ enum SnapshotExporter {
             isSynthetic: false
         )
 
-        for (name, state) in [("closed", IslandState.closed), ("expanded", IslandState.expanded)] {
+        // Pull one real snapshot so the media states render actual content.
+        let helper = MediaRemoteHelper()
+        var media: NowPlaying?
+        let done = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            for await snapshot in helper.start() where snapshot.hasContent {
+                media = snapshot
+                break
+            }
+            helper.stop()
+            done.signal()
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(6))
+            done.signal()
+        }
+        while done.wait(timeout: .now()) == .timedOut {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        let activity = media.map {
+            Activity(id: "media", priority: .ambient, kind: .nowPlaying($0))
+        }
+        if let media {
+            FileHandle.standardError.write(Data("media: \(media.title ?? "-") — \(media.artist ?? "-")\n".utf8))
+        } else {
+            FileHandle.standardError.write(Data("media: none available; rendering empty states\n".utf8))
+        }
+
+        var states: [(String, IslandState)] = [("closed", .closed)]
+        if let activity {
+            states.append(("peek", .peek(activity)))
+            states.append(("expanded", .expanded))
+        }
+
+        for (name, state) in states {
             let controller = IslandController(notch: notch)
+            controller.restore(activity: activity, tint: media.map { snapshot in
+                snapshot.artwork.map(ArtworkColor.dominant(in:)) ?? ArtworkColor.fallback
+            } ?? ArtworkColor.fallback)
             controller.forceState(state)
             let url = URL(fileURLWithPath: "\(prefix)-\(name).png")
             if render(controller: controller, to: url) {

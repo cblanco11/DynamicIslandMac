@@ -15,4 +15,14 @@ enum IslandState: Equatable, Sendable {
         if case .peek(let activity) = self { return activity }
         return nil
     }
+
+    /// Short form for logging. The default reflection dump includes the whole
+    /// activity payload, artwork byte counts and all.
+    var logDescription: String {
+        switch self {
+        case .closed:            "closed"
+        case .peek(let a):       "peek(\(a.id))"
+        case .expanded:          "expanded"
+        }
+    }
 }

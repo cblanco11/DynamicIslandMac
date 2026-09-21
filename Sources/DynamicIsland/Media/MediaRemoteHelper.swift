@@ -47,6 +47,50 @@ final class MediaRemoteHelper {
         return Paths(script: script, framework: framework)
     }
 
+    // MARK: - Orphan reaping
+
+    /// The helper does not die with us.
+    ///
+    /// It only notices our death when a write to the closed stdout pipe raises
+    /// SIGPIPE -- and while nothing is playing it never writes, so it can linger
+    /// forever. A crash or SIGKILL leaves one behind every time. perl has no
+    /// equivalent of PR_SET_PDEATHSIG on macOS and the vendored script has no
+    /// parent-watch option, so stale helpers are reaped explicitly at launch.
+    ///
+    /// Matched on our own bundled script path, and only when re-parented to
+    /// launchd, so a second copy of the app running normally is left alone.
+    static func reapOrphanedHelpers() -> Int {
+        guard let paths = bundledPaths() else { return 0 }
+
+        let pgrep = Process()
+        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        pgrep.arguments = ["-f", paths.script]
+        let pipe = Pipe()
+        pgrep.standardOutput = pipe
+        pgrep.standardError = Pipe()
+        guard (try? pgrep.run()) != nil else { return 0 }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        pgrep.waitUntilExit()
+
+        let me = ProcessInfo.processInfo.processIdentifier
+        var reaped = 0
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            guard let pid = Int32(line.trimmingCharacters(in: .whitespaces)), pid != me else { continue }
+            guard parentProcessID(of: pid) == 1 else { continue }   // orphan only
+            if kill(pid, SIGTERM) == 0 { reaped += 1 }
+        }
+        return reaped
+    }
+
+    private static func parentProcessID(of pid: pid_t) -> pid_t? {
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        let result = sysctl(&mib, u_int(mib.count), &info, &size, nil, 0)
+        guard result == 0, size > 0 else { return nil }
+        return info.kp_eproc.e_ppid
+    }
+
     // MARK: - Lifecycle
 
     func start() -> AsyncStream<NowPlaying> {
@@ -81,7 +125,10 @@ final class MediaRemoteHelper {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: paths.perl)
-        process.arguments = [paths.script, paths.framework, "stream"]
+        // --debounce coalesces bursts of updates (scrubbing, rapid track
+        // changes) into one payload, which matters when each carries ~140KB of
+        // base64 artwork.
+        process.arguments = [paths.script, paths.framework, "stream", "--debounce=200"]
 
         let out = Pipe()
         process.standardOutput = out

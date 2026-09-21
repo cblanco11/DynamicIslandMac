@@ -145,8 +145,9 @@ final class IslandController {
 
     // MARK: - Activities
 
-    /// What the island is showing when it is not being hovered.
-    @ObservationIgnored private var restingActivity: Activity?
+    /// What the island is showing when it is not being hovered. Observed: the
+    /// expanded view renders it too, since `.expanded` carries no payload.
+    private(set) var restingActivity: Activity?
 
     func present(_ activity: Activity?) {
         restingActivity = activity
@@ -154,6 +155,12 @@ final class IslandController {
         guard state != .expanded else { return }
         transition(to: restingState)
     }
+
+    /// The activity the island should draw, in any state.
+    var displayedActivity: Activity? { state.activity ?? restingActivity }
+
+    /// Tint for the current activity, supplied by whoever owns the providers.
+    var tint: NSColor = ArtworkColor.fallback
 
     private var restingState: IslandState {
         restingActivity.map { IslandState.peek($0) } ?? .closed
@@ -204,7 +211,7 @@ final class IslandController {
 
     private func commit(_ next: IslandState) {
         state = next
-        Self.log.log("state -> \(String(describing: next), privacy: .public)")
+        Self.log.log("state -> \(next.logDescription, privacy: .public)")
         beginMorph()
     }
 
@@ -249,6 +256,12 @@ final class IslandController {
         restingActivity = nil
         state = .closed
         onGeometryChange?()
+    }
+
+    /// Snapshot/debug only: seed what the island is showing without animating.
+    func restore(activity: Activity?, tint: NSColor) {
+        restingActivity = activity
+        self.tint = tint
     }
 
     /// Snapshot/debug only: jump straight to a state with no animation.

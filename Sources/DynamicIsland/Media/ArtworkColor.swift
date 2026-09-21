@@ -9,7 +9,7 @@ import AppKit
 /// background. Falls back to a neutral when a cover genuinely has no colour.
 enum ArtworkColor {
 
-    static let fallback = NSColor(white: 0.55, alpha: 1)
+    static let fallback = NSColor(white: 0.72, alpha: 1)
 
     static func dominant(in data: Data) -> NSColor {
         guard let image = NSImage(data: data),
@@ -61,11 +61,14 @@ enum ArtworkColor {
         })?.value, best.count > 0 else { return fallback }
 
         let n = Double(best.count)
-        // Lift saturation and clamp brightness so the tint reads against black.
+        // Everything this tints is drawn on black, so brightness has a hard
+        // floor: the cover's own brightness is irrelevant to legibility, and a
+        // dark album makes an unreadable progress bar. Saturation is lifted a
+        // little so the tint still reads as the record's colour.
         return NSColor(
             hue: CGFloat(best.h / n),
-            saturation: min(CGFloat(best.s / n) * 1.15, 1.0),
-            brightness: max(min(CGFloat(best.b / n) * 1.10, 0.95), 0.45),
+            saturation: min(CGFloat(best.s / n) * 1.20, 1.0),
+            brightness: max(min(CGFloat(best.b / n) * 1.25, 0.95), 0.70),
             alpha: 1
         )
     }

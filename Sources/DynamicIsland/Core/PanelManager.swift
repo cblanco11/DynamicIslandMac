@@ -34,6 +34,7 @@ final class PanelManager {
             if let entry = entries[id] {
                 entry.controller.resetImmediately()
                 entry.controller.update(notch: notch)
+                applyPresentation(to: entry.controller)
                 entry.panel.applyWindowRules()
                 entry.panel.reposition(on: screen)
                 entry.panel.orderFrontRegardless()
@@ -41,6 +42,7 @@ final class PanelManager {
                 let controller = IslandController(notch: notch)
                 let panel = IslandPanel(screen: screen, controller: controller)
                 panel.orderFrontRegardless()
+                applyPresentation(to: controller)
                 entries[id] = Entry(panel: panel, controller: controller)
                 log.notice("""
                     built panel for display \(id, privacy: .public) \
@@ -68,6 +70,34 @@ final class PanelManager {
             entry.panel.reposition(on: screen)
             entry.panel.orderFrontRegardless()
         }
+    }
+
+    /// Current presentation, retained so a panel rebuilt on a display change
+    /// comes back showing the same thing rather than blank.
+    private var currentActivity: Activity?
+    private var currentTint: NSColor = ArtworkColor.fallback
+    private var transportHandler: (@MainActor (MediaRemoteHelper.Command) -> Void)?
+
+    /// Push the registry's current activity to every screen's island.
+    func present(_ activity: Activity?, tint: NSColor) {
+        currentActivity = activity
+        currentTint = tint
+        for entry in entries.values {
+            entry.controller.tint = tint
+            entry.controller.present(activity)
+        }
+    }
+
+    /// Route transport commands from any island back to the media provider.
+    func setTransportHandler(_ handler: @escaping @MainActor (MediaRemoteHelper.Command) -> Void) {
+        transportHandler = handler
+        for entry in entries.values { entry.controller.onTransport = handler }
+    }
+
+    private func applyPresentation(to controller: IslandController) {
+        controller.tint = currentTint
+        controller.onTransport = transportHandler
+        controller.present(currentActivity)
     }
 
     var debugOverlayEnabled: Bool {
