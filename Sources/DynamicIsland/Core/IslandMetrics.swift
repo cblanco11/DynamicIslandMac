@@ -3,7 +3,7 @@ import SwiftUI
 /// Every tunable number in one place. Hover delays are overridable via
 /// `UserDefaults` so timing can be dialled in without a rebuild.
 enum IslandMetrics {
-    static let expandedSize = CGSize(width: 372, height: 152)
+    static let expandedSize = CGSize(width: 356, height: 174)
 
     /// Hover is a hint, not a reveal: a small step up from the resting pill so
     /// it reads as clickable without committing the screen space.

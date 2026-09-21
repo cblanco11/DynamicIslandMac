@@ -297,6 +297,15 @@ Two defences, both needed:
 - `AppDelegate.installSignalHandlers()` handles SIGTERM/SIGINT, which otherwise
   skip `applicationWillTerminate` entirely.
 
+### Never re-derive the track id from metadata
+
+Diff payloads routinely contain only `["playing"]` or
+`["playbackRate","timestamp"]` -- no identifier and no artwork. Falling back to
+`title|artist|album` when `uniqueIdentifier` is absent flips the id from
+`14681::14717` to a synthesised string, which misses the artwork cache, so the
+cover **vanished the instant playback was toggled** and the tint fell back to
+grey with it. Adopt a new identity only when the payload actually carries one.
+
 ### Stream payloads are large and partial
 
 Lines reach ~200KB because artwork arrives as base64 in every full payload, so
@@ -333,6 +342,14 @@ command actually fires.
 without one leaves the island in `.closed` and the top-edge assertion passes
 having tested nothing. The harness seeds a synthetic `NowPlaying` and drives
 closed -> peek -> hover -> expanded -> hover, covering every resize.
+
+### Measure the reference, don't eyeball it
+
+The expanded player's dimensions come from measuring the reference screenshot
+(island 373 x 174pt, artwork 56pt, 33pt left inset, 18pt top inset) and then
+measuring the render back. Eyeballing had it 23pt too short with the artwork a
+third too large, and put the progress bar beside the artwork rather than
+full-width beneath it.
 
 ## Budget
 

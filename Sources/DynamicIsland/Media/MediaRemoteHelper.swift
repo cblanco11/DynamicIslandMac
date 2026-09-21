@@ -232,10 +232,19 @@ final class MediaRemoteHelper {
         if let v = number("shuffleMode") { snapshot.shuffleMode = Int(v) }
         if let v = number("repeatMode") { snapshot.repeatMode = Int(v) }
 
-        let trackID = string("uniqueIdentifier")
-            ?? string("contentItemIdentifier")
-            ?? [snapshot.title, snapshot.artist, snapshot.album].compactMap { $0 }.joined(separator: "|")
-        snapshot.trackID = trackID.isEmpty ? nil : trackID
+        // Only adopt a new track identity when the payload actually carries
+        // one. Diff payloads routinely contain just ["playing"] or
+        // ["playbackRate","timestamp"], and re-deriving the id from metadata
+        // there flips it from "14681::14717" to "title|artist|album" -- which
+        // misses the artwork cache and makes the cover vanish the instant
+        // playback is toggled.
+        if let identifier = string("uniqueIdentifier") ?? string("contentItemIdentifier") {
+            snapshot.trackID = identifier
+        } else if snapshot.trackID == nil {
+            let derived = [snapshot.title, snapshot.artist, snapshot.album]
+                .compactMap { $0 }.joined(separator: "|")
+            snapshot.trackID = derived.isEmpty ? nil : derived
+        }
 
         if let base64 = string("artworkData"), let data = Data(base64Encoded: base64) {
             snapshot.artwork = data
@@ -247,8 +256,7 @@ final class MediaRemoteHelper {
             // Same track, artwork momentarily absent: keep showing what we had.
             snapshot.artwork = cached.data
             snapshot.artworkMIMEType = cached.mime
-        } else {
-            snapshot.artwork = nil
+        } else if snapshot.artwork == nil {
             snapshot.artworkMIMEType = nil
         }
     }

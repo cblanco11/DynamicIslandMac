@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Resting: artwork in the left extension, waveform (or a play glyph when
 /// paused) in the right. The notch itself stays empty, so on a notched Mac the
@@ -50,6 +51,10 @@ struct MediaHoverView: View {
 }
 
 /// The full player, opened by a click.
+///
+/// Three rows, matching the reference: artwork and track on top, a full-width
+/// progress bar under them, then transport. Dimensions are measured from the
+/// reference rather than guessed -- island 373x174, artwork 56.
 struct MediaExpandedView: View {
     let snapshot: NowPlaying
     let tint: Color
@@ -59,34 +64,32 @@ struct MediaExpandedView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 13) {
-                ArtworkThumb(snapshot: snapshot, tint: tint, side: 74, corner: 14)
-                    .shadow(color: tint.opacity(0.5), radius: 12, y: 4)
+                ArtworkThumb(snapshot: snapshot, tint: tint, side: 56, corner: 11)
+                    .shadow(color: tint.opacity(0.45), radius: 10, y: 3)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(snapshot.title ?? "Nothing playing")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-
-                        Spacer(minLength: 0)
-
-                        Waveform(isPlaying: snapshot.isPlaying, tint: tint,
-                                 barCount: 5, barWidth: 2, maxHeight: 13)
-                            .padding(.top, 2)
-                    }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(snapshot.title ?? "Nothing playing")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
 
                     Text(snapshot.artist ?? "")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(.white.opacity(0.62))
+                        .foregroundStyle(.white.opacity(0.6))
                         .lineLimit(1)
-
-                    Spacer(minLength: 0)
-
-                    PlaybackProgress(snapshot: snapshot, tint: tint)
                 }
-                .frame(height: 74)
+                .padding(.top, 1)
+
+                Spacer(minLength: 6)
+
+                Waveform(isPlaying: snapshot.isPlaying, tint: tint,
+                         barCount: 5, barWidth: 2, maxHeight: 13)
+                    .padding(.top, 3)
             }
+            .frame(height: 56)
+
+            PlaybackProgress(snapshot: snapshot, tint: tint)
+                .padding(.top, 17)
 
             HStack(spacing: 0) {
                 control("shuffle", .toggleShuffle, active: snapshot.isShuffling)
@@ -94,24 +97,44 @@ struct MediaExpandedView: View {
                 control("backward.fill", .previousTrack)
                 Spacer(minLength: 0)
                 control(snapshot.isPlaying ? "pause.fill" : "play.fill",
-                        .togglePlayPause, size: 19)
+                        .togglePlayPause, size: 18)
                 Spacer(minLength: 0)
                 control("forward.fill", .nextTrack)
                 Spacer(minLength: 0)
-                control("repeat", .toggleRepeat, active: snapshot.isRepeating)
+                outputDevice
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 12)
+            .padding(.horizontal, 4)
+            .padding(.top, 15)
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 15)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 24)
+        .padding(.top, 18)
+        .padding(.bottom, 16)
         // Clicking the body closes the player. SwiftUI gives the buttons
         // priority over an ancestor's tap gesture, so the controls still win.
         .contentShape(Rectangle())
         .onTapGesture { onDismiss() }
+    }
+
+    /// Reflects the real default output device, and opens Sound settings.
+    /// Read at render time rather than observed: the player is only on screen
+    /// while the user is looking at it.
+    private var outputDevice: some View {
+        let device = AudioOutput.current()
+        return Button {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            Image(systemName: device.symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.92))
+                .frame(width: 30, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(device.name)
     }
 
     private func control(_ symbol: String, _ command: MediaRemoteHelper.Command,
@@ -151,7 +174,7 @@ struct PlaybackProgress: View {
         let duration = snapshot.duration ?? 0
         let fraction = duration > 0 ? min(max(elapsed / duration, 0), 1) : 0
 
-        return VStack(spacing: 4) {
+        return VStack(spacing: 5) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.16))
