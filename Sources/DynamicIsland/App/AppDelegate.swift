@@ -15,6 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        if let prefix = LiveMorphCapture.requestedPrefix {
+            LiveMorphCapture.run(prefix: prefix)
+            return
+        }
+
         if let prefix = MorphFilmstrip.requestedPrefix {
             MorphFilmstrip.exportAndExit(prefix: prefix)
             return

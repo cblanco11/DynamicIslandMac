@@ -77,10 +77,8 @@ enum MorphFilmstrip {
                 Color(white: 0.32).frame(height: 33)   // menu bar
                 Color(white: 0.62)                     // brighter desktop, for contrast
             }
-            IslandShape()
+            IslandShape(size: size)
                 .fill(Color.black)
-                .frame(width: size.width, height: size.height)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .frame(width: canvas.width, height: canvas.height)
 

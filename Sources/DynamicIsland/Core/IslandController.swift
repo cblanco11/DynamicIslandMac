@@ -16,6 +16,16 @@ final class IslandController {
     /// region wide mid-flight.
     private(set) var isMorphing = false
 
+    /// Set the instant the cursor arrives, before the hover delay has elapsed.
+    ///
+    /// The panel is grown to its expanded size *here*, while the island is still
+    /// closed and completely static, so that no window resize ever overlaps the
+    /// morph. Resizing mid-animation makes Core Animation composite the old
+    /// backing store with centre gravity until SwiftUI redraws, which drops the
+    /// island into the middle of the new panel and then lets it climb back --
+    /// seen as the island detaching from the notch and growing upward into it.
+    private(set) var isPreparingExpansion = false
+
     private(set) var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
     /// Debug readout only; stays 0 unless the overlay is on.
@@ -94,7 +104,7 @@ final class IslandController {
     /// is already big enough before the shape grows into it, and only shrinks
     /// once the shape has finished collapsing.
     private var containedSize: CGSize {
-        guard isMorphing else { return currentSize }
+        guard isMorphing || isPreparingExpansion else { return currentSize }
         return CGSize(width: max(currentSize.width, IslandMetrics.expandedSize.width),
                       height: max(currentSize.height, IslandMetrics.expandedSize.height))
     }
@@ -142,6 +152,11 @@ final class IslandController {
     // MARK: - Hover
 
     func mouseEntered() {
+        // Grow the panel now, while nothing is animating.
+        if !isPreparingExpansion {
+            isPreparingExpansion = true
+            onGeometryChange?()
+        }
         scheduleHover(after: IslandMetrics.hoverInDelay) { controller in
             controller.transition(to: .expanded)
         }
@@ -149,8 +164,21 @@ final class IslandController {
 
     func mouseExited() {
         scheduleHover(after: IslandMetrics.hoverOutDelay) { controller in
-            controller.transition(to: .closed)
+            if controller.state.isClosed {
+                // Left before the island ever opened: just give the panel back.
+                controller.endExpansionPreparation()
+            } else {
+                controller.transition(to: .closed)
+            }
         }
+    }
+
+    /// Shrink the panel back. Only ever called when the island is closed and
+    /// settled, so again no resize overlaps an animation.
+    private func endExpansionPreparation() {
+        guard isPreparingExpansion else { return }
+        isPreparingExpansion = false
+        onGeometryChange?()
     }
 
     /// Cancels any pending hover intent and replaces it. One `Task` at a time and
@@ -190,6 +218,7 @@ final class IslandController {
             try? await Task.sleep(for: settle)
             guard !Task.isCancelled, let self else { return }
             isMorphing = false
+            if state.isClosed { isPreparingExpansion = false }
             onGeometryChange?()
         }
     }
@@ -207,6 +236,7 @@ final class IslandController {
         hoverTask = nil
         morphTask = nil
         isMorphing = false
+        isPreparingExpansion = false
         state = .closed
         onGeometryChange?()
     }

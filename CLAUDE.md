@@ -26,6 +26,7 @@ DynamicIsland -DIExportSnapshot /tmp/island   # render island PNGs and exit
 DynamicIsland -DISelfTest YES                 # window-server click-routing probe
 DynamicIsland -DILifecycleTest YES            # rebuild idempotency, debounce, wake
 DynamicIsland -DIExportMorph /tmp/morph       # filmstrip comparing morph springs
+DynamicIsland -DICaptureMorph /tmp/live       # capture a REAL morph, frame by frame
 ```
 
 All three print a `RESULT: PASS` / `FAIL` line and exit, so they are usable as
@@ -175,6 +176,34 @@ With TextEdit full-screen, its own menu-bar overlay window is at the same level
 as the island panel. Ordering within a level decides the winner, so the island is
 ordered front (`orderFrontRegardless`) on every rebuild and reassert. Verified:
 the island both draws over and receives hover events above a full-screen app.
+
+### Never resize the panel while the morph is running -- verified macOS 26.7
+
+Resizing the window mid-animation makes Core Animation composite the **old
+backing store with centre gravity** until SwiftUI's next draw. The island drops
+to the middle of the newly-taller panel -- exactly
+`(panelHeight - islandHeight) / 2` -- and then climbs back to the top as the
+shape grows. On screen that reads as the island detaching from the notch and
+expanding upward into it.
+
+Neither `layerContentsPlacement = .topLeft` nor
+`layerContentsRedrawPolicy = .duringViewResize` overrides it, on the view or the
+hosting view; the compositing happens at the window backing store.
+
+The fix is structural: `IslandController.isPreparingExpansion` grows the panel
+the instant the cursor arrives, **before** the hover delay, while the island is
+still closed and completely static. The panel shrinks again only after the
+collapse has fully settled. No window resize ever overlaps an animation.
+
+Regression check: `-DICaptureMorph` drives the real hover path, captures the
+live view every display tick, and asserts the island's top edge never leaves the
+top of the screen. It is in `make test`.
+
+**Note on measuring this:** `cacheDisplay` reflects that same compositing, so
+the harness shows the artifact rather than hiding it -- but it also means a
+reading taken during a resize describes the composite, not SwiftUI's layout.
+Confirm any suspected layout bug against a *static* frame (a closed island in an
+oversized panel) or an `ImageRenderer` pass before changing layout code.
 
 ### The morph is symmetric; it does not *look* symmetric -- and why
 

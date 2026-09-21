@@ -12,6 +12,7 @@ import QuartzCore
 final class IslandHostingContainer: NSView {
 
     private let controller: IslandController
+    private var hosting: NSHostingView<IslandView>?
     private var trackingArea: NSTrackingArea?
     private var isHovering = false
     private var frameLink: CADisplayLink?
@@ -24,10 +25,36 @@ final class IslandHostingContainer: NSView {
         self.controller = controller
         super.init(frame: CGRect(origin: .zero, size: controller.panelSize))
 
+        // The panel resizes at transition boundaries. Between the resize and
+        // SwiftUI's next draw, Core Animation has to show *something*, and by
+        // default it stretches the stale contents with centre gravity -- the
+        // island visibly drops to the middle of the new, taller panel and then
+        // snaps back to the top. That reads as the island detaching from the
+        // notch and growing upward into it.
+        //
+        // `.duringViewResize` forces a real redraw as the view resizes, and
+        // `.topLeft` keeps any content that does slip through welded to the top
+        // instead of drifting to the centre.
+        wantsLayer = true
+        layerContentsRedrawPolicy = .duringViewResize
+        layerContentsPlacement = .topLeft
+
         let hosting = NSHostingView(rootView: IslandView(controller: controller))
+        hosting.sizingOptions = []
         hosting.frame = bounds
         hosting.autoresizingMask = [.width, .height]
+        hosting.wantsLayer = true
+        hosting.layerContentsRedrawPolicy = .duringViewResize
+        hosting.layerContentsPlacement = .topLeft
         addSubview(hosting)
+        self.hosting = hosting
+    }
+
+    /// Belt and braces alongside the autoresizing mask: the hosting view must
+    /// track the container exactly, or SwiftUI centres the island inside it.
+    override func layout() {
+        super.layout()
+        if hosting?.frame != bounds { hosting?.frame = bounds }
     }
 
     @available(*, unavailable)

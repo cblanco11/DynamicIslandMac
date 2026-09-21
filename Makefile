@@ -43,6 +43,7 @@ test: build stop
 	@echo "== synthetic notch =="      && $(BIN) -DISelfTest YES -DIForceSyntheticNotch YES
 	@echo "== debug overlay =="        && $(BIN) -DISelfTest YES -DIDebugOverlay YES
 	@echo "== lifecycle =="            && $(BIN) -DILifecycleTest YES
+	@echo "== morph top edge =="       && $(BIN) -DICaptureMorph "$(CURDIR)/$(DERIVED)/live" | tail -3
 
 # Renders the island to PNGs -- an LSUIElement app is invisible to screen capture.
 snapshots: build stop

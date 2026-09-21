@@ -3,10 +3,20 @@ import SwiftUI
 /// The island outline: a squircle body whose **top** corners are inverted
 /// (concave), so the shape flares outward and dissolves into the menu bar.
 ///
-/// The path is a pure function of `rect`, which is the whole point -- SwiftUI
-/// animates the view's frame and the path follows. One geometry change, never a
-/// cross-fade between two shapes.
+/// The island's size is the shape's `animatableData`, not its layout frame.
+/// That is deliberate and load-bearing. When the size drove a `.frame`
+/// modifier, SwiftUI allocated layout from the *model* size while rendering the
+/// *animated* size, and centred the difference -- so mid-morph the island sat
+/// `(panelHeight - islandHeight) / 2` below the top of the screen and appeared
+/// to detach from the notch and grow upward into it.
+///
+/// Here the view's frame is constant (the panel) and only the path changes. The
+/// island is pinned to `bounds.minY` and centred horizontally by construction,
+/// so it cannot drift no matter what the layout system does.
 struct IslandShape: Shape {
+
+    /// The island's current size. Animated via `animatableData`.
+    var size: CGSize
 
     /// Radius of the concave top shoulders.
     var shoulderRadius: CGFloat = 12
@@ -14,9 +24,21 @@ struct IslandShape: Shape {
     /// Nominal bottom corner radius before clamping.
     var bottomRadius: CGFloat = 24
 
-    func path(in rect: CGRect) -> Path {
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(size.width, size.height) }
+        set { size = CGSize(width: newValue.first, height: newValue.second) }
+    }
+
+    func path(in bounds: CGRect) -> Path {
         var path = Path()
-        guard rect.width > 0, rect.height > 0 else { return path }
+        guard size.width > 0, size.height > 0 else { return path }
+
+        // Welded to the top edge, centred horizontally. Not negotiable, and not
+        // delegated to a layout alignment.
+        let rect = CGRect(x: bounds.midX - size.width / 2,
+                          y: bounds.minY,
+                          width: size.width,
+                          height: size.height)
 
         // Concave shoulders. Quarter circles, approximated as cubics so we never
         // have to reason about SwiftUI's arc winding in a y-down space.

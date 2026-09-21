@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 
 /// One borderless, non-activating panel per screen.
 ///
@@ -84,7 +85,14 @@ final class IslandPanel: NSPanel {
         let target = CGRect(origin: origin, size: size)
 
         if frame != target {
+            // No implicit layer animation on the resize: the island's morph is
+            // the only thing that should be moving.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             setFrame(target, display: true)
+            contentView?.layoutSubtreeIfNeeded()
+            contentView?.displayIfNeeded()
+            CATransaction.commit()
         }
         (contentView as? IslandHostingContainer)?.geometryDidChange()
     }
